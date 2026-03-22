@@ -1,0 +1,104 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true          # auto-register all Eureka services
+          lower-case-service-id: true
+      routes:
+        # Landing page — available courier services (public)
+        - id: auth-services
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/services
+          filters:
+            - StripPrefix=0
+
+        # Auth Service routes (public) — lb:// = load-balanced via Eureka
+        - id: auth-signup
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/signup, /api/auth/login
+          filters:
+            - StripPrefix=0
+
+        # Auth profile (protected)
+        - id: auth-profile
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/profile
+          filters:
+            - StripPrefix=0
+            - name: JwtAuthFilter
+
+        # Delivery Service (protected)
+        - id: delivery-service
+          uri: lb://delivery-service
+          predicates:
+            - Path=/api/deliveries/**
+          filters:
+            - StripPrefix=0
+            - name: JwtAuthFilter
+
+        # Tracking public route
+        - id: tracking-public
+          uri: lb://tracking-service
+          predicates:
+            - Path=/api/tracking/{id}
+            - Method=GET
+          filters:
+            - StripPrefix=0
+
+        # Tracking protected routes
+        - id: tracking-protected
+          uri: lb://tracking-service
+          predicates:
+            - Path=/api/tracking/**
+          filters:
+            - StripPrefix=0
+            - name: JwtAuthFilter
+
+        # Admin Service (protected + admin role)
+        - id: admin-service
+          uri: lb://admin-service
+          predicates:
+            - Path=/api/admin/**
+          filters:
+            - StripPrefix=0
+            - name: JwtAuthFilter
+
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE:http://localhost:8761/eureka/}
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+jwt:
+  secret: ${JWT_SECRET:SmartCourierJWTSecretKey2024VeryLongAndSecure}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info

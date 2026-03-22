@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  # ─── Oracle Database ───────────────────────────────────────────────────────
+  oracle-db:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: smartcourier-oracle
+    environment:
+      ORACLE_PASSWORD: capgdb
+      ORACLE_DATABASE: XEPDB1
+      APP_USER: capgdb
+      APP_USER_PASSWORD: capgdb
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - smartcourier-network
+
+  # ─── Eureka Server ──────────────────────────────────────────────────────────
+  eureka-server:
+    build: ./eureka-server
+    container_name: smartcourier-eureka
+    ports:
+      - "8761:8761"
+    environment:
+      - EUREKA_HOSTNAME=eureka-server
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8761/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+    networks:
+      - smartcourier-network
+
+  # ─── API Gateway ────────────────────────────────────────────────────────────
+  api-gateway:
+    build: ./api-gateway
+    container_name: smartcourier-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+      - JWT_SECRET=SmartCourierJWTSecretKey2024VeryLongAndSecure
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - smartcourier-network
+
+  # ─── Auth Service ────────────────────────────────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    container_name: smartcourier-auth
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      - SPRING_DATASOURCE_USERNAME=capgdb
+      - SPRING_DATASOURCE_PASSWORD=capgdb
+      - JWT_SECRET=SmartCourierJWTSecretKey2024VeryLongAndSecure
+      - JWT_EXPIRATION=86400000
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - smartcourier-network
+
+  # ─── Delivery Service ────────────────────────────────────────────────────────
+  delivery-service:
+    build: ./delivery-service
+    container_name: smartcourier-delivery
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      - SPRING_DATASOURCE_USERNAME=capgdb
+      - SPRING_DATASOURCE_PASSWORD=capgdb
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    networks:
+      - smartcourier-network
+
+  # ─── Tracking Service ────────────────────────────────────────────────────────
+  tracking-service:
+    build: ./tracking-service
+    container_name: smartcourier-tracking
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      - SPRING_DATASOURCE_USERNAME=capgdb
+      - SPRING_DATASOURCE_PASSWORD=capgdb
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - smartcourier-network
+
+  # ─── Admin Service ────────────────────────────────────────────────────────────
+  admin-service:
+    build: ./admin-service
+    container_name: smartcourier-admin
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:oracle:thin:@oracle-db:1521/XEPDB1
+      - SPRING_DATASOURCE_USERNAME=capgdb
+      - SPRING_DATASOURCE_PASSWORD=capgdb
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      oracle-db:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    networks:
+      - smartcourier-network
+
+volumes:
+  oracle-data:
+
+networks:
+  smartcourier-network:
+    driver: bridge
